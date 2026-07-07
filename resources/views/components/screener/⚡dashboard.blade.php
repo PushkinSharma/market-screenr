@@ -1,7 +1,13 @@
 <?php
 
+use App\Jobs\ComputeScreenerScoresJob;
+use App\Jobs\RunBootstrapSyncJob;
+use App\Jobs\SyncIndiaFundamentalsJob;
 use App\Models\ScreenerPreset;
 use App\Models\ScreenerScore;
+use App\Services\FundamentalsSyncService;
+use App\Services\ScreenerEngine;
+use App\Services\ScreenerSyncOrchestrator;
 use App\Services\SyncStatusService;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -18,12 +24,35 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
     public string $sortDir = 'desc';
     public ?int $presetId = null;
 
+    public int $syncLimit = 20;
+    public bool $syncRefreshMtf = false;
+    public bool $syncIncludeUs = true;
+    public bool $syncPanelOpen = false;
+    public ?string $syncMessage = null;
+    public string $syncMessageType = 'info';
+
     public function mount(): void
     {
         $this->presetId = ScreenerPreset::defaultPreset()->id;
+        $this->syncLimit = config('market_screenr.sync.bootstrap_company_limit');
     }
 
     public function updatedSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedMtfOnly(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedMarket(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedPresetId(): void
     {
         $this->resetPage();
     }
@@ -38,20 +67,100 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
         }
     }
 
-    public function with(): array
+    public function queueBootstrapSync(): void
     {
-        $preset = ScreenerPreset::query()->find($this->presetId) ?? ScreenerPreset::defaultPreset();
+        $this->syncLimit = max(1, min(100, $this->syncLimit));
 
+        RunBootstrapSyncJob::dispatch(
+            limit: $this->syncLimit,
+            refreshMtf: $this->syncRefreshMtf,
+            includeUs: $this->syncIncludeUs,
+        );
+
+        $this->syncMessageType = 'success';
+        $this->syncMessage = "Bootstrap queued (limit {$this->syncLimit}). Watch pipeline status below — usually 2–10 min on Cloud.";
+        $this->syncPanelOpen = true;
+    }
+
+    public function runBootstrapSyncNow(): void
+    {
+        $this->syncLimit = max(1, min(100, $this->syncLimit));
+
+        try {
+            app(ScreenerSyncOrchestrator::class)->runBootstrap(
+                $this->syncLimit,
+                $this->syncRefreshMtf,
+                $this->syncIncludeUs,
+            );
+
+            $this->syncMessageType = 'success';
+            $this->syncMessage = "Bootstrap finished inline (limit {$this->syncLimit}).";
+        } catch (\Throwable $e) {
+            $this->syncMessageType = 'error';
+            $this->syncMessage = 'Bootstrap failed: '.$e->getMessage();
+        }
+    }
+
+    public function queueComputeScores(): void
+    {
+        ComputeScreenerScoresJob::dispatch();
+        $this->syncMessageType = 'success';
+        $this->syncMessage = 'Score computation queued.';
+    }
+
+    public function computeScoresNow(): void
+    {
+        try {
+            $engine = app(ScreenerEngine::class);
+            $presets = ScreenerPreset::query()->get();
+            $total = 0;
+
+            foreach ($presets as $preset) {
+                $total += $engine->computeRanksAndScores($preset);
+            }
+
+            $this->syncMessageType = 'success';
+            $this->syncMessage = "Computed scores for {$total} preset rows.";
+        } catch (\Throwable $e) {
+            $this->syncMessageType = 'error';
+            $this->syncMessage = 'Score compute failed: '.$e->getMessage();
+        }
+    }
+
+    public function queueAllSyncJobs(): void
+    {
+        app(ScreenerSyncOrchestrator::class)->dispatchAllJobs($this->syncLimit);
+        $this->syncMessageType = 'success';
+        $this->syncMessage = 'All scheduled sync jobs queued (universe, MTF, fundamentals, scores).';
+    }
+
+    public function syncIndiaFundamentalsNow(): void
+    {
+        $this->syncLimit = max(1, min(100, $this->syncLimit));
+
+        try {
+            (new SyncIndiaFundamentalsJob(limit: $this->syncLimit))->handle(app(FundamentalsSyncService::class));
+            $this->syncMessageType = 'success';
+            $this->syncMessage = "India fundamentals synced (limit {$this->syncLimit}). Run compute scores next.";
+        } catch (\Throwable $e) {
+            $this->syncMessageType = 'error';
+            $this->syncMessage = 'India fundamentals failed: '.$e->getMessage();
+        }
+    }
+
+    public function clearSyncMessage(): void
+    {
+        $this->syncMessage = null;
+    }
+
+    private function baseScoreQuery(ScreenerPreset $preset, ?string $latestDate): \Illuminate\Database\Eloquent\Builder
+    {
         $query = ScreenerScore::query()
-            ->with(['company.latestMetric'])
             ->where('screener_preset_id', $preset->id)
             ->whereHas('company', function ($q) {
                 $q->where('is_active', true);
                 if ($this->market !== 'ALL') {
                     $q->where('market', $this->market);
-                }
-                if ($this->mtfOnly) {
-                    $q->where('is_mtf_eligible', true);
                 }
                 if ($this->search) {
                     $q->where(function ($sq) {
@@ -61,24 +170,45 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
                 }
             });
 
-        // Latest computed scores
+        if ($latestDate) {
+            $query->where('computed_at', $latestDate);
+        }
+
+        return $query;
+    }
+
+    public function with(): array
+    {
+        $preset = ScreenerPreset::query()->find($this->presetId) ?? ScreenerPreset::defaultPreset();
+
         $latestDate = ScreenerScore::query()
             ->where('screener_preset_id', $preset->id)
             ->max('computed_at');
 
-        if ($latestDate) {
-            $query->where('computed_at', $latestDate);
+        $baseQuery = $this->baseScoreQuery($preset, $latestDate);
+        $allScoredCount = (clone $baseQuery)->count();
+        $mtfScoredCount = (clone $baseQuery)->whereHas('company', fn ($q) => $q->where('is_mtf_eligible', true))->count();
+
+        $query = clone $baseQuery;
+        if ($this->mtfOnly) {
+            $query->whereHas('company', fn ($q) => $q->where('is_mtf_eligible', true));
         }
 
         $allowedSorts = ['final_score', 'rank', 'valuation_score', 'correction_score', 'momentum_score'];
         $sortCol = in_array($this->sortBy, $allowedSorts) ? $this->sortBy : 'final_score';
 
-        $scores = $query->orderBy($sortCol, $this->sortDir)->paginate(25);
+        $scoredTotal = (clone $query)->count();
+        $scores = $query->with(['company.latestMetric'])->orderBy($sortCol, $this->sortDir)->paginate(25);
 
         $syncStatus = app(SyncStatusService::class)->dashboardStats();
+        $scoreFunnel = app(SyncStatusService::class)->scoreDiagnostics($this->mtfOnly, $this->market);
 
         return [
             'scores' => $scores,
+            'scoredTotal' => $scoredTotal,
+            'allScoredCount' => $allScoredCount,
+            'mtfScoredCount' => $mtfScoredCount,
+            'scoreFunnel' => $scoreFunnel,
             'preset' => $preset,
             'presets' => ScreenerPreset::query()->orderBy('name')->get(),
             'latestDate' => $latestDate,
@@ -110,7 +240,7 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
         </div>
 
         {{-- Pipeline / sync status --}}
-        <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-4">
+        <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-4" wire:poll.15s>
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <h2 class="text-sm font-semibold text-slate-300">Data Pipeline</h2>
                 <div class="flex flex-wrap gap-3 text-xs text-slate-500">
@@ -119,6 +249,7 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
                     <span>{{ $syncStatus['companies']['us'] }} US</span>
                     <span>{{ $syncStatus['companies']['mtf_eligible'] }} MTF</span>
                     <span>{{ $syncStatus['companies']['with_metrics_latest'] }} with metrics</span>
+                    <span>{{ $scoredTotal }} in table</span>
                 </div>
             </div>
 
@@ -156,9 +287,117 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
                     @foreach($syncStatus['diagnostics'] as $issue)
                         <p class="text-xs text-amber-400/90">⚠ {{ $issue }}</p>
                     @endforeach
-                    <p class="text-xs text-slate-500 pt-1">On Cloud run: <code class="text-emerald-400">php artisan screener:sync --sync</code></p>
                 </div>
             @endif
+
+            {{-- Sync controls --}}
+            <div class="border-t border-slate-800 pt-4">
+                <button
+                    type="button"
+                    wire:click="$toggle('syncPanelOpen')"
+                    class="flex items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white"
+                >
+                    <span>{{ $syncPanelOpen ? '▼' : '▶' }}</span>
+                    Run sync from dashboard
+                </button>
+
+                @if($syncPanelOpen)
+                    <div class="mt-4 space-y-4">
+                        @if($syncMessage)
+                            <div @class([
+                                'rounded-lg px-3 py-2 text-sm flex items-start justify-between gap-3',
+                                'bg-emerald-500/10 border border-emerald-500/30 text-emerald-200' => $syncMessageType === 'success',
+                                'bg-red-500/10 border border-red-500/30 text-red-200' => $syncMessageType === 'error',
+                                'bg-slate-800 border border-slate-700 text-slate-300' => $syncMessageType === 'info',
+                            ])>
+                                <span>{{ $syncMessage }}</span>
+                                <button type="button" wire:click="clearSyncMessage" class="text-slate-400 hover:text-white shrink-0">×</button>
+                            </div>
+                        @endif
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                            <label class="space-y-1">
+                                <span class="text-xs text-slate-400">India company limit</span>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    wire:model="syncLimit"
+                                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2"
+                                />
+                            </label>
+                            <label class="flex items-end gap-2 pb-2 cursor-pointer">
+                                <input type="checkbox" wire:model="syncRefreshMtf" class="rounded bg-slate-800 border-slate-600 text-emerald-500">
+                                <span class="text-slate-300">Refresh BSE MTF list <span class="text-slate-500">(slow)</span></span>
+                            </label>
+                            <label class="flex items-end gap-2 pb-2 cursor-pointer">
+                                <input type="checkbox" wire:model="syncIncludeUs" class="rounded bg-slate-800 border-slate-600 text-emerald-500">
+                                <span class="text-slate-300">Include US fundamentals</span>
+                            </label>
+                        </div>
+
+                        <p class="text-xs text-slate-500">
+                            Equivalent CLI: <code class="text-emerald-400">php artisan screener:sync --sync --limit={{ $syncLimit }}@if($syncRefreshMtf) --refresh-mtf@endif</code>
+                        </p>
+
+                        <div class="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                wire:click="queueBootstrapSync"
+                                wire:loading.attr="disabled"
+                                class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium disabled:opacity-50"
+                            >
+                                <span wire:loading.remove wire:target="queueBootstrapSync">Queue full bootstrap</span>
+                                <span wire:loading wire:target="queueBootstrapSync">Queuing…</span>
+                            </button>
+                            <button
+                                type="button"
+                                wire:click="runBootstrapSyncNow"
+                                wire:loading.attr="disabled"
+                                class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm disabled:opacity-50"
+                            >
+                                Run bootstrap now <span class="text-slate-400">(may timeout)</span>
+                            </button>
+                            <button
+                                type="button"
+                                wire:click="queueComputeScores"
+                                wire:loading.attr="disabled"
+                                class="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-sm disabled:opacity-50"
+                            >
+                                Queue compute scores
+                            </button>
+                            <button
+                                type="button"
+                                wire:click="computeScoresNow"
+                                wire:loading.attr="disabled"
+                                class="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-sm disabled:opacity-50"
+                            >
+                                Compute scores now
+                            </button>
+                            <button
+                                type="button"
+                                wire:click="syncIndiaFundamentalsNow"
+                                wire:loading.attr="disabled"
+                                class="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-sm disabled:opacity-50"
+                            >
+                                India fundamentals only
+                            </button>
+                            <button
+                                type="button"
+                                wire:click="queueAllSyncJobs"
+                                wire:loading.attr="disabled"
+                                class="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-sm disabled:opacity-50"
+                            >
+                                Queue all jobs
+                            </button>
+                        </div>
+
+                        <p class="text-xs text-slate-500">
+                            On Laravel Cloud, prefer <strong class="text-slate-400">Queue full bootstrap</strong> — runs on the queue worker without SSH. Pipeline tiles auto-refresh every 15s.
+                        </p>
+                    </div>
+                @endif
+            </div>
         </div>
 
         {{-- Filters --}}
@@ -174,11 +413,27 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
                 <option value="US">United States</option>
                 <option value="ALL">All Markets</option>
             </select>
-            <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                <input type="checkbox" wire:model.live="mtfOnly" class="rounded bg-slate-800 border-slate-600 text-emerald-500 focus:ring-emerald-500/50">
+            <label class="flex items-center gap-2 text-sm cursor-pointer {{ $mtfOnly ? 'text-emerald-400' : 'text-slate-300' }}">
+                <input type="checkbox" wire:model.live.boolean="mtfOnly" class="rounded bg-slate-800 border-slate-600 text-emerald-500 focus:ring-emerald-500/50">
                 MTF eligible only
+                <span class="text-xs text-slate-500">({{ $mtfScoredCount }}/{{ $allScoredCount }} scored)</span>
             </label>
+            @if($mtfOnly && $mtfScoredCount === $allScoredCount && $allScoredCount > 0)
+                <span class="text-xs text-slate-500">All scored {{ $market === 'ALL' ? '' : $market }} stocks are MTF — try All Markets for US names.</span>
+            @endif
         </div>
+
+        @if($scoreFunnel['metrics_on_date'] > $scoredTotal)
+            <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-sm text-amber-200/90">
+                <strong>Why fewer stocks than "with metrics"?</strong>
+                The table lists <em>scored</em> rows for your filters ({{ $scoredTotal }} shown), not every synced company.
+                Pipeline: {{ $scoreFunnel['metrics_on_date'] }} companies have metrics today
+                → {{ $scoreFunnel['after_market_filter'] }} match market "{{ $market }}"
+                @if($mtfOnly) → {{ $scoreFunnel['after_mtf_filter'] }} are MTF-eligible @endif.
+                US stocks ({{ $syncStatus['companies']['us'] }}) are hidden while market is India.
+                Uncheck MTF or pick "All Markets" to see more; run sync with a higher <code class="text-emerald-400">--limit</code> to enrich more India names.
+            </div>
+        @endif
 
         {{-- Weight legend --}}
         @if($preset)

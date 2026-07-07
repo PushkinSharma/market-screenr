@@ -2,21 +2,20 @@
 
 namespace App\Console\Commands;
 
-use App\Jobs\ComputeScreenerScoresJob;
-use App\Jobs\SyncIndiaFundamentalsJob;
-use App\Jobs\SyncIndiaUniverseJob;
-use App\Jobs\SyncMtfGroupListJob;
-use App\Jobs\SyncUsFundamentalsJob;
-use App\Jobs\SyncUsUniverseJob;
 use App\Models\Company;
 use App\Services\FundamentalsSyncService;
 use App\Services\ScreenerEngine;
-use App\Services\SyncStatusService;
+use App\Services\ScreenerSyncOrchestrator;
 use Illuminate\Console\Command;
 
 class SyncCompanyCommand extends Command
 {
-    protected $signature = 'screener:sync {symbol? : NSE/NASDAQ symbol} {--market=IN : IN or US} {--sync : Run inline instead of dispatching to queue}';
+    protected $signature = 'screener:sync
+        {symbol? : NSE/NASDAQ symbol}
+        {--market=IN : IN or US}
+        {--sync : Run inline instead of dispatching to queue}
+        {--limit= : Number of Indian companies to enrich in this run}
+        {--refresh-mtf : Refresh the BSE MTF list inline (slow/fragile on Cloud)}';
 
     protected $description = 'Sync fundamentals for a single company or batch';
 
@@ -39,25 +38,21 @@ class SyncCompanyCommand extends Command
         }
 
         if ($this->option('sync')) {
+            $limit = (int) ($this->option('limit') ?: config('market_screenr.sync.bootstrap_company_limit'));
+
             $this->info('Running full sync inline...');
-            (new SyncIndiaUniverseJob)->handle(app(\App\Services\MarketData\NseClient::class));
-            (new SyncUsUniverseJob)->handle();
-            (new SyncMtfGroupListJob)->handle(app(\App\Services\MarketData\NseClient::class));
-            (new SyncIndiaFundamentalsJob)->handle($sync);
-            (new SyncUsFundamentalsJob)->handle(app(\App\Services\MarketData\BusinessQuantClient::class), app(\App\Services\MetricCalculator::class));
-            (new ComputeScreenerScoresJob)->handle($engine);
+            app(ScreenerSyncOrchestrator::class)->runBootstrap(
+                $limit,
+                (bool) $this->option('refresh-mtf'),
+                includeUs: true,
+            );
             $this->call('screener:status');
 
             return self::SUCCESS;
         }
 
         $this->info('Dispatching batch sync jobs to queue...');
-        SyncIndiaUniverseJob::dispatch();
-        SyncUsUniverseJob::dispatch();
-        SyncMtfGroupListJob::dispatch();
-        SyncIndiaFundamentalsJob::dispatch();
-        SyncUsFundamentalsJob::dispatch();
-        ComputeScreenerScoresJob::dispatch();
+        app(ScreenerSyncOrchestrator::class)->dispatchAllJobs();
 
         $this->warn('Jobs queued. Ensure a queue worker is running on Laravel Cloud.');
         $this->line('Or run inline: php artisan screener:sync --sync');

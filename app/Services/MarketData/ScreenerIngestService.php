@@ -15,6 +15,10 @@ class ScreenerIngestService
      */
     public function fetchCompanyData(Company $company): array
     {
+        if (! config('market_screenr.screener_ingest.enabled')) {
+            return [];
+        }
+
         $python = config('market_screenr.screener_ingest.python_path');
         $script = config('market_screenr.screener_ingest.script_path');
 
@@ -24,7 +28,7 @@ class ScreenerIngestService
             return [];
         }
 
-        $result = Process::timeout(120)->run([
+        $result = Process::timeout(config('market_screenr.screener_ingest.timeout'))->run([
             $python,
             $script,
             '--symbol',

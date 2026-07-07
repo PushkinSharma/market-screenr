@@ -17,7 +17,7 @@ class SyncStatusService
         'bse_mtf' => ['label' => 'BSE MTF (Group I)', 'market' => 'IN'],
         'screener_in' => ['label' => 'India Fundamentals', 'market' => 'IN'],
         'businessquant' => ['label' => 'BusinessQuant (US)', 'market' => 'US'],
-        'yahoo_prices' => ['label' => 'Yahoo Finance Prices', 'market' => 'ALL'],
+        'manual_bootstrap' => ['label' => 'Manual Bootstrap', 'market' => 'ALL'],
         'scores' => ['label' => 'MTF Score Engine', 'market' => 'ALL'],
     ];
 
@@ -101,6 +101,12 @@ class SyncStatusService
 
         if ($stats['with_metrics'] === 0) {
             $issues[] = 'No company metrics stored yet. Fundamentals sync has not completed — Python/screener.in is unavailable on Laravel Cloud; NSE quote + Yahoo price fallback is used instead.';
+        } elseif ($stats['with_metrics_latest'] > 0 && $stats['with_metrics_latest'] < $stats['india']) {
+            $issues[] = "Only {$stats['with_metrics_latest']} of {$stats['india']} India stocks have metrics. Bootstrap sync uses a limit (MARKET_SCREENR_BOOTSTRAP_LIMIT) — run `php artisan screener:sync --sync --limit=20` to enrich more.";
+        }
+
+        if ($stats['with_metrics_latest'] > ScreenerScore::query()->distinct('company_id')->count('company_id')) {
+            $issues[] = 'The table below shows scored stocks only, not every company with metrics. Uncheck "MTF eligible only" or set market to "All Markets" to widen results, then run `php artisan screener:compute-scores`.';
         }
 
         $latestMetric = CompanyMetric::query()->max('as_of_date');

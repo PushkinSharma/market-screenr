@@ -7,12 +7,14 @@ use App\Models\CompanyMetric;
 use App\Models\MetricHistory;
 use App\Services\MarketData\NseQuoteFundamentalsService;
 use App\Services\MarketData\ScreenerIngestService;
+use App\Services\MarketData\YahooFinanceClient;
 
 class FundamentalsSyncService
 {
     public function __construct(
         private ScreenerIngestService $screener,
         private NseQuoteFundamentalsService $nseQuote,
+        private YahooFinanceClient $yahoo,
         private MetricCalculator $calculator,
     ) {}
 
@@ -21,13 +23,16 @@ class FundamentalsSyncService
         $screenerData = [];
 
         if ($company->market === 'IN') {
-            // Always try NSE quote (works without Python — important on Laravel Cloud)
+            // NSE first, then Yahoo fallback for valuation when Cloud blocks NSE
             $this->nseQuote->applyToCompany($company);
+            $this->applyYahooValuationIfMissing($company);
 
             $screenerData = $this->screener->fetchCompanyData($company);
             if (! empty($screenerData)) {
                 $this->applyScreenerData($company, $screenerData);
             }
+        } else {
+            $this->applyYahooValuationIfMissing($company);
         }
 
         $metric = $this->calculator->computeAndStore($company);
@@ -93,6 +98,29 @@ class FundamentalsSyncService
                 );
             }
         }
+    }
+
+    private function applyYahooValuationIfMissing(Company $company): void
+    {
+        $existing = CompanyMetric::query()
+            ->where('company_id', $company->id)
+            ->where('as_of_date', today())
+            ->first();
+
+        if ($existing?->current_pe !== null) {
+            return;
+        }
+
+        $snapshot = $this->yahoo->fetchValuationSnapshot($company);
+
+        if (empty($snapshot)) {
+            return;
+        }
+
+        CompanyMetric::query()->updateOrCreate(
+            ['company_id' => $company->id, 'as_of_date' => today()],
+            $snapshot,
+        );
     }
 
     private function parseFloat(mixed $value): ?float

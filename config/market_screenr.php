@@ -21,10 +21,17 @@ return [
         'base_url' => env('YAHOO_BASE_URL', 'https://query1.finance.yahoo.com/v8/finance/chart'),
     ],
 
+    'http' => [
+        'timeout' => (int) env('MARKET_SCREENR_HTTP_TIMEOUT', 8),
+        'connect_timeout' => (int) env('MARKET_SCREENR_HTTP_CONNECT_TIMEOUT', 3),
+    ],
+
     'screener_ingest' => [
+        'enabled' => (bool) env('SCREENER_INGEST_ENABLED', false),
         'python_path' => env('SCREENER_PYTHON_PATH', 'python3'),
         'script_path' => base_path('services/screener-ingest/ingest.py'),
         'delay_seconds' => (float) env('SCREENER_INGEST_DELAY', 1.5),
+        'timeout' => (int) env('SCREENER_INGEST_TIMEOUT', 15),
     ],
 
     'default_weights' => [
@@ -42,6 +49,8 @@ return [
         'us_fundamentals_at' => '06:00',
         'mtf_list_day' => 2, // monthly on 2nd
         'scores_at' => '22:30',
+        'bootstrap_company_limit' => (int) env('MARKET_SCREENR_BOOTSTRAP_LIMIT', 20),
+        'price_history_years' => (int) env('MARKET_SCREENR_PRICE_HISTORY_YEARS', 1),
     ],
 
     /*

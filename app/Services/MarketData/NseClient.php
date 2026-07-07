@@ -14,21 +14,28 @@ class NseClient
      */
     public function fetchEquityList(): array
     {
-        $this->warmSession();
+        try {
+            $this->warmSession();
 
-        $response = Http::withHeaders($this->headers())
-            ->timeout(30)
-            ->get(config('market_screenr.nse.base_url').'/api/equity-stockIndices', [
-                'index' => 'NIFTY TOTAL MARKET',
-            ]);
+            $response = Http::withHeaders($this->headers())
+                ->connectTimeout(config('market_screenr.http.connect_timeout'))
+                ->timeout(config('market_screenr.http.timeout'))
+                ->get(config('market_screenr.nse.base_url').'/api/equity-stockIndices', [
+                    'index' => 'NIFTY TOTAL MARKET',
+                ]);
 
-        if ($response->failed()) {
-            Log::warning('NSE equity list failed', ['status' => $response->status()]);
+            if ($response->failed()) {
+                Log::warning('NSE equity list failed', ['status' => $response->status()]);
+
+                return [];
+            }
+
+            return $response->json('data', []) ?? [];
+        } catch (\Throwable $e) {
+            Log::warning('NSE equity list exception', ['error' => $e->getMessage()]);
 
             return [];
         }
-
-        return $response->json('data', []) ?? [];
     }
 
     /**
@@ -36,19 +43,26 @@ class NseClient
      */
     public function quoteEquity(string $symbol): array
     {
-        $this->warmSession();
+        try {
+            $this->warmSession();
 
-        $response = Http::withHeaders($this->headers())
-            ->timeout(30)
-            ->get(config('market_screenr.nse.base_url')."/api/quote-equity?symbol={$symbol}");
+            $response = Http::withHeaders($this->headers())
+                ->connectTimeout(config('market_screenr.http.connect_timeout'))
+                ->timeout(config('market_screenr.http.timeout'))
+                ->get(config('market_screenr.nse.base_url')."/api/quote-equity?symbol={$symbol}");
 
-        if ($response->failed()) {
-            Log::warning('NSE quote failed', ['symbol' => $symbol, 'status' => $response->status()]);
+            if ($response->failed()) {
+                Log::warning('NSE quote failed', ['symbol' => $symbol, 'status' => $response->status()]);
+
+                return [];
+            }
+
+            return $response->json() ?? [];
+        } catch (\Throwable $e) {
+            Log::warning('NSE quote exception', ['symbol' => $symbol, 'error' => $e->getMessage()]);
 
             return [];
         }
-
-        return $response->json() ?? [];
     }
 
     /**
@@ -57,19 +71,26 @@ class NseClient
     public function fetchMtfEligibleSymbols(): array
     {
         // BSE Group I list — MTF eligible securities
-        $response = Http::timeout(30)
-            ->get('https://www.bseindia.com/markets/equity/EQReports/varmargin.aspx', [
-                'flag' => 1,
-            ]);
+        try {
+            $response = Http::connectTimeout(config('market_screenr.http.connect_timeout'))
+                ->timeout(config('market_screenr.http.timeout'))
+                ->get('https://www.bseindia.com/markets/equity/EQReports/varmargin.aspx', [
+                    'flag' => 1,
+                ]);
 
-        if ($response->failed()) {
+            if ($response->failed()) {
+                return [];
+            }
+
+            // Parse HTML table for Group I scrips — simplified extraction
+            preg_match_all('/>([A-Z0-9&.-]+)<\/td>\s*<td[^>]*>\s*Group\s*I/i', $response->body(), $matches);
+
+            return array_unique($matches[1] ?? []);
+        } catch (\Throwable $e) {
+            Log::warning('BSE MTF list exception', ['error' => $e->getMessage()]);
+
             return [];
         }
-
-        // Parse HTML table for Group I scrips — simplified extraction
-        preg_match_all('/>([A-Z0-9&.-]+)<\/td>\s*<td[^>]*>\s*Group\s*I/i', $response->body(), $matches);
-
-        return array_unique($matches[1] ?? []);
     }
 
     private function warmSession(): void
@@ -78,14 +99,21 @@ class NseClient
             return;
         }
 
-        $response = Http::withHeaders([
-            'User-Agent' => config('market_screenr.nse.user_agent'),
-            'Accept' => 'text/html,application/xhtml+xml',
-        ])->get(config('market_screenr.nse.base_url'));
+        try {
+            $response = Http::withHeaders([
+                'User-Agent' => config('market_screenr.nse.user_agent'),
+                'Accept' => 'text/html,application/xhtml+xml',
+            ])
+                ->connectTimeout(config('market_screenr.http.connect_timeout'))
+                ->timeout(config('market_screenr.http.timeout'))
+                ->get(config('market_screenr.nse.base_url'));
 
-        $this->cookie = collect($response->headers()['Set-Cookie'] ?? [])
-            ->map(fn ($c) => explode(';', $c)[0])
-            ->implode('; ');
+            $this->cookie = collect($response->headers()['Set-Cookie'] ?? [])
+                ->map(fn ($c) => explode(';', $c)[0])
+                ->implode('; ');
+        } catch (\Throwable) {
+            $this->cookie = '';
+        }
     }
 
     /**

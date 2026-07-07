@@ -17,6 +17,7 @@ class SyncIndiaFundamentalsJob implements ShouldQueue
 
     public function __construct(
         public ?int $companyId = null,
+        public ?int $limit = null,
     ) {}
 
     public function handle(FundamentalsSyncService $sync): void
@@ -33,7 +34,7 @@ class SyncIndiaFundamentalsJob implements ShouldQueue
             $query->where(function ($q) {
                 $q->whereNull('fundamentals_synced_at')
                     ->orWhere('fundamentals_synced_at', '<', now()->subDay());
-            })->limit(50);
+            })->limit($this->limit ?? config('market_screenr.sync.bootstrap_company_limit'));
         }
 
         $companies = $query->get();

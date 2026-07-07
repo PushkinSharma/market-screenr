@@ -18,7 +18,7 @@ class MetricCalculator
 
     public function computeAndStore(Company $company): CompanyMetric
     {
-        $this->yahoo->syncPriceHistory($company, 10);
+        $this->yahoo->syncPriceHistory($company, config('market_screenr.sync.price_history_years'));
 
         $prices = PriceHistory::query()
             ->where('company_id', $company->id)

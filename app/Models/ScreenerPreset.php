@@ -37,7 +37,7 @@ class ScreenerPreset extends Model
             ['is_default' => true, 'market' => 'IN'],
             [
                 'name' => 'MTF Default',
-                'mtf_only' => true,
+                'mtf_only' => false,
                 'weights' => config('market_screenr.default_weights'),
                 'filters' => [],
             ],

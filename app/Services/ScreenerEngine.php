@@ -27,15 +27,14 @@ class ScreenerEngine
                 if ($preset->market !== 'ALL') {
                     $q->where('market', $preset->market);
                 }
-                if ($preset->mtf_only) {
-                    $q->where('is_mtf_eligible', true);
-                }
             })
             ->get();
 
         if ($metrics->isEmpty()) {
             return 0;
         }
+
+        $this->fillCrossSectionalValuationPercentiles($metrics);
 
         $this->computeComponentRanks($metrics);
 
@@ -89,6 +88,33 @@ class ScreenerEngine
         }
 
         return count($scores);
+    }
+
+    /**
+     * When historical P/E series is missing (Cloud without screener.in), rank today's P/E
+     * across the scored universe so valuation columns are not blank.
+     *
+     * @param  Collection<int, CompanyMetric>  $metrics
+     */
+    private function fillCrossSectionalValuationPercentiles(Collection $metrics): void
+    {
+        $withPe = $metrics->filter(fn (CompanyMetric $m) => $m->current_pe !== null && $m->current_pe > 0);
+
+        if ($withPe->count() < 2) {
+            return;
+        }
+
+        $peValues = $withPe->pluck('current_pe')->sort()->values();
+
+        foreach ($metrics as $metric) {
+            if ($metric->valuation_percentile !== null || $metric->current_pe === null || $metric->current_pe <= 0) {
+                continue;
+            }
+
+            $belowOrEqual = $peValues->filter(fn (float $pe) => $pe >= $metric->current_pe)->count();
+            $metric->valuation_percentile = ($belowOrEqual / $peValues->count()) * 100;
+            $metric->save();
+        }
     }
 
     /**
