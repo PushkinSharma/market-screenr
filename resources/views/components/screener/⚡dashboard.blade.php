@@ -337,7 +337,8 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
                         </div>
 
                         <p class="text-xs text-slate-500">
-                            Equivalent CLI: <code class="text-emerald-400">php artisan screener:sync --sync --limit={{ $syncLimit }}@if($syncRefreshMtf) --refresh-mtf@endif</code>
+                            Equivalent CLI:
+                            <code class="text-emerald-400">php artisan screener:sync --sync --limit={{ $syncLimit }}{{ $syncRefreshMtf ? ' --refresh-mtf' : '' }}</code>
                         </p>
 
                         <div class="flex flex-wrap gap-2">
@@ -429,7 +430,7 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
                 The table lists <em>scored</em> rows for your filters ({{ $scoredTotal }} shown), not every synced company.
                 Pipeline: {{ $scoreFunnel['metrics_on_date'] }} companies have metrics today
                 → {{ $scoreFunnel['after_market_filter'] }} match market "{{ $market }}"
-                @if($mtfOnly) → {{ $scoreFunnel['after_mtf_filter'] }} are MTF-eligible @endif.
+                {{ $mtfOnly ? '→ '.$scoreFunnel['after_mtf_filter'].' are MTF-eligible' : '' }}.
                 US stocks ({{ $syncStatus['companies']['us'] }}) are hidden while market is India.
                 Uncheck MTF or pick "All Markets" to see more; run sync with a higher <code class="text-emerald-400">--limit</code> to enrich more India names.
             </div>
@@ -482,22 +483,26 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
                             </td>
                             <td class="px-4 py-3 text-right font-mono">{{ $m?->current_pe ? number_format($m->current_pe, 1) : '—' }}</td>
                             <td class="px-4 py-3 text-right">
-                                @if($m?->valuationVerdict())
+                                @if($m !== null && $m->valuation_percentile !== null)
                                     <span class="text-xs {{ $m->isCheap() ? 'text-emerald-400' : 'text-slate-400' }}">
                                         {{ $m->valuationVerdict() }}
                                     </span>
-                                @else — @endif
+                                @else
+                                    —
+                                @endif
                             </td>
                             <td class="px-4 py-3 text-right font-mono text-amber-400/80">
                                 {{ $m?->pct_below_ath ? number_format($m->pct_below_ath, 1).'%' : '—' }}
                             </td>
                             <td class="px-4 py-3 text-right font-mono">{{ $m?->roce ? number_format($m->roce, 1).'%' : '—' }}</td>
                             <td class="px-4 py-3 text-right font-mono text-xs">
-                                @if($m?->distance_from_dma_200_pct !== null)
+                                @if($m !== null && $m->distance_from_dma_200_pct !== null)
                                     <span class="{{ $m->distance_from_dma_200_pct > 0 ? 'text-emerald-400' : 'text-red-400' }}">
                                         {{ $m->distance_from_dma_200_pct > 0 ? '+' : '' }}{{ number_format($m->distance_from_dma_200_pct, 1) }}%
                                     </span>
-                                @else — @endif
+                                @else
+                                    —
+                                @endif
                             </td>
                             <td class="px-4 py-3 text-center">
                                 @if($score->company->is_mtf_eligible)
