@@ -2,11 +2,11 @@
 
 use App\Models\ScreenerPreset;
 use App\Models\ScreenerScore;
-use App\Services\ScreenerEngine;
+use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-new class extends Component
+new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class extends Component
 {
     use WithPagination;
 
@@ -84,8 +84,7 @@ new class extends Component
 };
 ?>
 
-<x-layouts.app title="MTF Screener">
-    <div class="space-y-6">
+<div class="space-y-6">
         {{-- Header --}}
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -210,5 +209,4 @@ new class extends Component
         </div>
 
         <div>{{ $scores->links() }}</div>
-    </div>
-</x-layouts.app>
+</div>

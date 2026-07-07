@@ -2,9 +2,10 @@
 
 use App\Models\Company;
 use App\Models\MetricHistory;
+use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-new class extends Component
+new #[Layout('components.layouts.app')] class extends Component
 {
     public Company $company;
 
@@ -49,9 +50,8 @@ new class extends Component
 };
 ?>
 
-<x-layouts.app :title="$company->symbol">
+<div class="space-y-8">
     @php $m = $metric; @endphp
-    <div class="space-y-8">
         {{-- Header --}}
         <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
@@ -236,5 +236,4 @@ new class extends Component
                 to answer: <em>Is this temporary, or has the business fundamentally deteriorated?</em>
             </p>
         </section>
-    </div>
-</x-layouts.app>
+</div>

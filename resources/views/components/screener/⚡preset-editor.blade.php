@@ -3,9 +3,10 @@
 use App\Enums\ScoreComponent;
 use App\Models\ScreenerPreset;
 use App\Jobs\ComputeScreenerScoresJob;
+use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-new class extends Component
+new #[Layout('components.layouts.app', ['title' => 'Score Weights'])] class extends Component
 {
     public ?int $presetId = null;
     public string $name = 'MTF Default';
@@ -65,8 +66,7 @@ new class extends Component
 };
 ?>
 
-<x-layouts.app title="Score Weights">
-    <div class="max-w-2xl mx-auto space-y-6">
+<div class="max-w-2xl mx-auto space-y-6">
         <div>
             <h1 class="text-2xl font-bold">MTF Score Weights</h1>
             <p class="text-slate-400 text-sm mt-1">Assign weights to each scoring component. Must total 100%.</p>
@@ -134,5 +134,4 @@ new class extends Component
                 <li><strong class="text-slate-300">Results Quality</strong> — Profit/revenue CAGR, FCF, FII buying trend</li>
             </ul>
         </div>
-    </div>
-</x-layouts.app>
+</div>
