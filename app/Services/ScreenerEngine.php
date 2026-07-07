@@ -17,11 +17,11 @@ class ScreenerEngine
     public function computeRanksAndScores(?ScreenerPreset $preset = null): int
     {
         $preset ??= ScreenerPreset::defaultPreset();
-        $today = today();
+        $metricsDate = CompanyMetric::query()->max('as_of_date') ?? today();
 
         $metrics = CompanyMetric::query()
             ->with('company')
-            ->where('as_of_date', $today)
+            ->where('as_of_date', $metricsDate)
             ->whereHas('company', function ($q) use ($preset) {
                 $q->where('is_active', true);
                 if ($preset->market !== 'ALL') {
@@ -61,6 +61,10 @@ class ScreenerEngine
 
         usort($scores, fn ($a, $b) => $b['final_score'] <=> $a['final_score']);
 
+        $computedAt = $metricsDate instanceof \Carbon\Carbon
+            ? $metricsDate->toDateString()
+            : (string) $metricsDate;
+
         foreach ($scores as $rank => $entry) {
             /** @var CompanyMetric $metric */
             $metric = $entry['metric'];
@@ -69,7 +73,7 @@ class ScreenerEngine
                 [
                     'screener_preset_id' => $preset->id,
                     'company_id' => $metric->company_id,
-                    'computed_at' => $today,
+                    'computed_at' => $computedAt,
                 ],
                 [
                     'final_score' => $entry['final_score'],
@@ -170,7 +174,7 @@ class ScreenerEngine
         return ScreenerScore::query()
             ->with(['company.latestMetric'])
             ->where('screener_preset_id', $preset->id)
-            ->where('computed_at', today())
+            ->where('computed_at', CompanyMetric::query()->max('as_of_date') ?? today())
             ->orderByDesc('final_score')
             ->limit($limit)
             ->get();

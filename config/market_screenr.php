@@ -44,4 +44,44 @@ return [
         'scores_at' => '22:30',
     ],
 
+    /*
+    | Fallback when NSE API is unreachable (common on Cloud datacenter IPs).
+    | These are liquid NSE large-caps likely MTF-eligible.
+    */
+    'fallback_nse_symbols' => [
+        ['symbol' => 'RELIANCE', 'name' => 'Reliance Industries'],
+        ['symbol' => 'TCS', 'name' => 'Tata Consultancy Services'],
+        ['symbol' => 'HDFCBANK', 'name' => 'HDFC Bank'],
+        ['symbol' => 'INFY', 'name' => 'Infosys'],
+        ['symbol' => 'ICICIBANK', 'name' => 'ICICI Bank'],
+        ['symbol' => 'HINDUNILVR', 'name' => 'Hindustan Unilever'],
+        ['symbol' => 'ITC', 'name' => 'ITC'],
+        ['symbol' => 'SBIN', 'name' => 'State Bank of India'],
+        ['symbol' => 'BHARTIARTL', 'name' => 'Bharti Airtel'],
+        ['symbol' => 'KOTAKBANK', 'name' => 'Kotak Mahindra Bank'],
+        ['symbol' => 'LT', 'name' => 'Larsen & Toubro'],
+        ['symbol' => 'AXISBANK', 'name' => 'Axis Bank'],
+        ['symbol' => 'ASIANPAINT', 'name' => 'Asian Paints'],
+        ['symbol' => 'MARUTI', 'name' => 'Maruti Suzuki'],
+        ['symbol' => 'TITAN', 'name' => 'Titan Company'],
+        ['symbol' => 'SUNPHARMA', 'name' => 'Sun Pharmaceutical'],
+        ['symbol' => 'WIPRO', 'name' => 'Wipro'],
+        ['symbol' => 'ULTRACEMCO', 'name' => 'UltraTech Cement'],
+        ['symbol' => 'NESTLEIND', 'name' => 'Nestle India'],
+        ['symbol' => 'BAJFINANCE', 'name' => 'Bajaj Finance'],
+    ],
+
+    'fallback_us_symbols' => [
+        ['symbol' => 'AAPL', 'name' => 'Apple Inc.', 'sector' => 'Technology'],
+        ['symbol' => 'MSFT', 'name' => 'Microsoft Corp.', 'sector' => 'Technology'],
+        ['symbol' => 'GOOGL', 'name' => 'Alphabet Inc.', 'sector' => 'Technology'],
+        ['symbol' => 'AMZN', 'name' => 'Amazon.com Inc.', 'sector' => 'Consumer'],
+        ['symbol' => 'NVDA', 'name' => 'NVIDIA Corp.', 'sector' => 'Technology'],
+        ['symbol' => 'META', 'name' => 'Meta Platforms', 'sector' => 'Technology'],
+        ['symbol' => 'BRK-B', 'name' => 'Berkshire Hathaway', 'sector' => 'Financials'],
+        ['symbol' => 'JPM', 'name' => 'JPMorgan Chase', 'sector' => 'Financials'],
+        ['symbol' => 'V', 'name' => 'Visa Inc.', 'sector' => 'Financials'],
+        ['symbol' => 'JNJ', 'name' => 'Johnson & Johnson', 'sector' => 'Healthcare'],
+    ],
+
 ];

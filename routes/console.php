@@ -5,6 +5,7 @@ use App\Jobs\SyncIndiaFundamentalsJob;
 use App\Jobs\SyncIndiaUniverseJob;
 use App\Jobs\SyncMtfGroupListJob;
 use App\Jobs\SyncUsFundamentalsJob;
+use App\Jobs\SyncUsUniverseJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -15,6 +16,10 @@ Artisan::command('inspire', function () {
 
 Schedule::job(new SyncIndiaUniverseJob)
     ->dailyAt(config('market_screenr.sync.india_universe_at'))
+    ->timezone('Asia/Kolkata');
+
+Schedule::job(new SyncUsUniverseJob)
+    ->weeklyOn(1, '07:00')
     ->timezone('Asia/Kolkata');
 
 Schedule::job(new SyncMtfGroupListJob)

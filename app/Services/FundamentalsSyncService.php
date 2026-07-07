@@ -5,29 +5,36 @@ namespace App\Services;
 use App\Models\Company;
 use App\Models\CompanyMetric;
 use App\Models\MetricHistory;
+use App\Services\MarketData\NseQuoteFundamentalsService;
 use App\Services\MarketData\ScreenerIngestService;
-use Illuminate\Support\Arr;
 
 class FundamentalsSyncService
 {
     public function __construct(
         private ScreenerIngestService $screener,
+        private NseQuoteFundamentalsService $nseQuote,
         private MetricCalculator $calculator,
     ) {}
 
     public function syncCompany(Company $company): CompanyMetric
     {
-        $data = $this->screener->fetchCompanyData($company);
+        $screenerData = [];
 
-        if (! empty($data)) {
-            $this->applyScreenerData($company, $data);
+        if ($company->market === 'IN') {
+            // Always try NSE quote (works without Python — important on Laravel Cloud)
+            $this->nseQuote->applyToCompany($company);
+
+            $screenerData = $this->screener->fetchCompanyData($company);
+            if (! empty($screenerData)) {
+                $this->applyScreenerData($company, $screenerData);
+            }
         }
 
         $metric = $this->calculator->computeAndStore($company);
 
         $company->update(['fundamentals_synced_at' => now()]);
 
-        return $metric;
+        return $metric->fresh();
     }
 
     /**

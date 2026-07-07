@@ -7,6 +7,7 @@ use App\Models\CompanyMetric;
 use App\Models\MetricHistory;
 use App\Services\MarketData\BusinessQuantClient;
 use App\Services\MetricCalculator;
+use App\Services\SyncRunRecorder;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -17,6 +18,15 @@ class SyncUsFundamentalsJob implements ShouldQueue
 
     public function handle(BusinessQuantClient $bq, MetricCalculator $calculator): void
     {
+        $recorder = new SyncRunRecorder('businessquant', 'US');
+
+        if (empty(config('market_screenr.businessquant.api_key'))) {
+            $recorder->finish('failed', 0, 0, 'BUSINESSQUANT_API_KEY is not configured.');
+            Log::warning('SyncUsFundamentalsJob: missing BUSINESSQUANT_API_KEY');
+
+            return;
+        }
+
         $companies = Company::query()
             ->where('market', 'US')
             ->where('is_active', true)
@@ -27,15 +37,25 @@ class SyncUsFundamentalsJob implements ShouldQueue
             ->limit(25)
             ->get();
 
+        $succeeded = 0;
+
         foreach ($companies as $company) {
             try {
                 $this->syncUsCompany($company, $bq);
                 $calculator->computeAndStore($company);
                 $company->update(['fundamentals_synced_at' => now()]);
+                $succeeded++;
             } catch (\Throwable $e) {
                 Log::error("US sync failed: {$company->symbol}", ['error' => $e->getMessage()]);
             }
         }
+
+        $recorder->finish(
+            $succeeded > 0 ? 'success' : 'failed',
+            $companies->count(),
+            $succeeded,
+            "Synced {$succeeded}/{$companies->count()} US stocks via BusinessQuant.",
+        );
     }
 
     private function syncUsCompany(Company $company, BusinessQuantClient $bq): void

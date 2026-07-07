@@ -2,6 +2,7 @@
 
 use App\Models\ScreenerPreset;
 use App\Models\ScreenerScore;
+use App\Services\SyncStatusService;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -74,11 +75,14 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
 
         $scores = $query->orderBy($sortCol, $this->sortDir)->paginate(25);
 
+        $syncStatus = app(SyncStatusService::class)->dashboardStats();
+
         return [
             'scores' => $scores,
             'preset' => $preset,
             'presets' => ScreenerPreset::query()->orderBy('name')->get(),
             'latestDate' => $latestDate,
+            'syncStatus' => $syncStatus,
         ];
     }
 };
@@ -103,6 +107,58 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
                     @endforeach
                 </select>
             </div>
+        </div>
+
+        {{-- Pipeline / sync status --}}
+        <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-sm font-semibold text-slate-300">Data Pipeline</h2>
+                <div class="flex flex-wrap gap-3 text-xs text-slate-500">
+                    <span>{{ $syncStatus['companies']['total'] }} companies</span>
+                    <span>{{ $syncStatus['companies']['india'] }} IN</span>
+                    <span>{{ $syncStatus['companies']['us'] }} US</span>
+                    <span>{{ $syncStatus['companies']['mtf_eligible'] }} MTF</span>
+                    <span>{{ $syncStatus['companies']['with_metrics_latest'] }} with metrics</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+                @foreach($syncStatus['syncs'] as $sync)
+                    <div class="bg-slate-800/50 rounded-lg px-3 py-2 border border-slate-700/50">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-slate-300 font-medium truncate">{{ $sync['label'] }}</span>
+                            <span @class([
+                                'shrink-0 px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold',
+                                'bg-emerald-500/20 text-emerald-400' => $sync['status'] === 'success',
+                                'bg-amber-500/20 text-amber-400' => $sync['status'] === 'partial',
+                                'bg-red-500/20 text-red-400' => in_array($sync['status'], ['failed', 'never']),
+                            ])>{{ $sync['status'] }}</span>
+                        </div>
+                        <div class="text-slate-500 mt-1">
+                            @if($sync['finished_at'])
+                                {{ $sync['finished_at']->diffForHumans() }}
+                                @if($sync['records_succeeded'] > 0)
+                                    · {{ $sync['records_succeeded'] }} rows
+                                @endif
+                            @else
+                                Never synced
+                            @endif
+                        </div>
+                        @if($sync['message'])
+                            <div class="text-slate-600 mt-0.5 truncate" title="{{ $sync['message'] }}">{{ $sync['message'] }}</div>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
+
+            @if(!empty($syncStatus['diagnostics']))
+                <div class="border-t border-slate-800 pt-3 space-y-1">
+                    @foreach($syncStatus['diagnostics'] as $issue)
+                        <p class="text-xs text-amber-400/90">⚠ {{ $issue }}</p>
+                    @endforeach
+                    <p class="text-xs text-slate-500 pt-1">On Cloud run: <code class="text-emerald-400">php artisan screener:sync --sync</code></p>
+                </div>
+            @endif
         </div>
 
         {{-- Filters --}}
@@ -199,8 +255,16 @@ new #[Layout('components.layouts.app', ['title' => 'MTF Screener'])] class exten
                     @empty
                         <tr>
                             <td colspan="9" class="px-4 py-12 text-center text-slate-500">
-                                No scores yet. Run <code class="text-emerald-400">php artisan db:seed --class=DemoDataSeeder</code>
-                                then <code class="text-emerald-400">php artisan screener:compute-scores</code>
+                                <p class="mb-2">No scored stocks yet.</p>
+                                @if($syncStatus['companies']['total'] === 0)
+                                    <p class="text-xs">Database is empty — run the bootstrap sync on Cloud.</p>
+                                @elseif($syncStatus['companies']['with_metrics'] === 0)
+                                    <p class="text-xs">Companies exist but no metrics — fundamentals sync hasn't completed.</p>
+                                @elseif($mtfOnly && $syncStatus['companies']['mtf_eligible'] === 0)
+                                    <p class="text-xs">Try turning off "MTF eligible only" — BSE MTF sync may have failed.</p>
+                                @else
+                                    <p class="text-xs">Run <code class="text-emerald-400">php artisan screener:compute-scores</code></p>
+                                @endif
                             </td>
                         </tr>
                     @endforelse
