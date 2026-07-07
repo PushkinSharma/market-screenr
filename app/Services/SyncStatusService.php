@@ -26,26 +26,38 @@ class SyncStatusService
      */
     public function dashboardStats(): array
     {
-        $latestMetricDate = CompanyMetric::query()->max('as_of_date');
-        $latestScoreDate = ScreenerScore::query()->max('computed_at');
+        $companies = $this->companyCounts();
 
         return [
-            'companies' => [
-                'total' => Company::query()->where('is_active', true)->count(),
-                'india' => Company::query()->where('market', 'IN')->where('is_active', true)->count(),
-                'us' => Company::query()->where('market', 'US')->where('is_active', true)->count(),
-                'mtf_eligible' => Company::query()->where('market', 'IN')->where('is_mtf_eligible', true)->count(),
-                'with_metrics' => CompanyMetric::query()->distinct('company_id')->count('company_id'),
-                'with_metrics_latest' => $latestMetricDate
-                    ? CompanyMetric::query()->where('as_of_date', $latestMetricDate)->distinct('company_id')->count('company_id')
-                    : 0,
-            ],
+            'companies' => $companies,
             'dates' => [
-                'latest_metric' => $latestMetricDate,
-                'latest_score' => $latestScoreDate,
+                'latest_metric' => CompanyMetric::query()->max('as_of_date'),
+                'latest_score' => ScreenerScore::query()->max('computed_at'),
             ],
             'syncs' => $this->syncFeed(),
-            'diagnostics' => $this->diagnostics(),
+            'diagnostics' => $this->diagnostics($companies),
+        ];
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function companyCounts(): array
+    {
+        $latestMetricDate = CompanyMetric::query()->max('as_of_date');
+
+        return [
+            'total' => Company::query()->where('is_active', true)->count(),
+            'india' => Company::query()->where('market', 'IN')->where('is_active', true)->count(),
+            'us' => Company::query()->where('market', 'US')->where('is_active', true)->count(),
+            'mtf_eligible' => Company::query()->where('market', 'IN')->where('is_mtf_eligible', true)->count(),
+            'with_metrics' => (int) CompanyMetric::query()->selectRaw('count(distinct company_id) as aggregate')->value('aggregate'),
+            'with_metrics_latest' => $latestMetricDate
+                ? (int) CompanyMetric::query()
+                    ->where('as_of_date', $latestMetricDate)
+                    ->selectRaw('count(distinct company_id) as aggregate')
+                    ->value('aggregate')
+                : 0,
         ];
     }
 
@@ -71,12 +83,13 @@ class SyncStatusService
     }
 
     /**
+     * @param  array<string, int>|null  $companyStats
      * @return array<int, string>
      */
-    public function diagnostics(): array
+    public function diagnostics(?array $companyStats = null): array
     {
+        $stats = $companyStats ?? $this->companyCounts();
         $issues = [];
-        $stats = $this->dashboardStats()['companies'];
 
         if ($stats['total'] === 0) {
             $issues[] = 'No companies in database. Run `php artisan screener:sync` or wait for the NSE universe job. NSE may block Cloud IPs — a fallback list is used when the API fails.';
@@ -103,7 +116,7 @@ class SyncStatusService
     }
 
     /**
-     * @return array<string, int>
+     * @return array<string, int|string|null>
      */
     public function scoreDiagnostics(?bool $mtfOnly = true, ?string $market = 'IN'): array
     {
@@ -111,7 +124,7 @@ class SyncStatusService
 
         if (! $metricDate) {
             return [
-                'metric_date' => 0,
+                'metric_date' => 'none',
                 'total_companies' => Company::query()->where('is_active', true)->count(),
                 'metrics_on_date' => 0,
                 'after_market_filter' => 0,
@@ -119,8 +132,7 @@ class SyncStatusService
             ];
         }
 
-        $metricsQuery = CompanyMetric::query()->where('as_of_date', $metricDate);
-        $metricsOnDate = (clone $metricsQuery)->count();
+        $metricsOnDate = CompanyMetric::query()->where('as_of_date', $metricDate)->count();
 
         $afterMarket = CompanyMetric::query()
             ->where('as_of_date', $metricDate)
@@ -146,7 +158,7 @@ class SyncStatusService
             ->count();
 
         return [
-            'metric_date' => $metricDate,
+            'metric_date' => (string) $metricDate,
             'total_companies' => Company::query()->where('is_active', true)->count(),
             'metrics_on_date' => $metricsOnDate,
             'after_market_filter' => $afterMarket,

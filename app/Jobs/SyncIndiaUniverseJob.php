@@ -48,7 +48,7 @@ class SyncIndiaUniverseJob implements ShouldQueue
 
             if ($usedFallback) {
                 $attrs['is_mtf_eligible'] = true;
-                $attrs['mtf_group'] = 'Group I (fallback)';
+                $attrs['mtf_group'] = 'Group I';
             }
 
             Company::query()->updateOrCreate(
