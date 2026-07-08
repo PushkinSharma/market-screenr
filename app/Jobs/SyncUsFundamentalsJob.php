@@ -38,12 +38,32 @@ class SyncUsFundamentalsJob implements ShouldQueue
             ->get();
 
         $succeeded = 0;
+        $businessQuantSucceeded = 0;
+        $yahooFallbackOnly = 0;
+        $businessQuantUnavailable = false;
         $lastError = null;
 
         foreach ($companies as $company) {
             try {
-                $this->applyBusinessQuantMetrics($company, $bq);
+                $appliedBusinessQuant = false;
+
+                if (! $businessQuantUnavailable) {
+                    $appliedBusinessQuant = $this->applyBusinessQuantMetrics($company, $bq);
+                    $lastError = $bq->lastError() ?: $lastError;
+
+                    if (! $appliedBusinessQuant && $bq->lastError()) {
+                        $businessQuantUnavailable = true;
+                    }
+                }
+
                 $sync->syncCompany($company);
+
+                if ($appliedBusinessQuant) {
+                    $businessQuantSucceeded++;
+                } else {
+                    $yahooFallbackOnly++;
+                }
+
                 $succeeded++;
             } catch (\Throwable $e) {
                 $lastError = $e->getMessage();
@@ -51,25 +71,35 @@ class SyncUsFundamentalsJob implements ShouldQueue
             }
         }
 
-        $message = "Synced {$succeeded}/{$companies->count()} US stocks via BusinessQuant.";
-        if ($succeeded === 0 && $lastError) {
-            $message .= ' Last error: '.$lastError;
+        $message = "Synced {$succeeded}/{$companies->count()} US stocks.";
+        if ($businessQuantSucceeded > 0) {
+            $message .= " BusinessQuant enriched {$businessQuantSucceeded}.";
+        }
+        if ($yahooFallbackOnly > 0) {
+            $message .= " Yahoo fallback used for {$yahooFallbackOnly}.";
+        }
+        if ($lastError) {
+            $message .= ' BusinessQuant note: '.$lastError;
         }
 
         $recorder->finish(
-            $succeeded > 0 ? 'success' : 'failed',
+            match (true) {
+                $succeeded === 0 => 'failed',
+                $businessQuantSucceeded === 0 && $companies->isNotEmpty() => 'partial',
+                default => 'success',
+            },
             $companies->count(),
             $succeeded,
             $message,
         );
     }
 
-    private function applyBusinessQuantMetrics(Company $company, BusinessQuantClient $bq): void
+    private function applyBusinessQuantMetrics(Company $company, BusinessQuantClient $bq): bool
     {
         $snapshot = $bq->ratioSnapshot($company->symbol);
 
         if (empty($snapshot['metrics']) && empty($snapshot['pe_history'])) {
-            return;
+            return false;
         }
 
         $peValues = collect($snapshot['pe_history'])->pluck('value')->filter();
@@ -94,5 +124,7 @@ class SyncUsFundamentalsJob implements ShouldQueue
                 ['value' => $row['value'], 'source' => 'businessquant'],
             );
         }
+
+        return true;
     }
 }

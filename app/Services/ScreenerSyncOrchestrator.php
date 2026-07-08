@@ -10,6 +10,7 @@ use App\Jobs\SyncUsFundamentalsJob;
 use App\Jobs\SyncUsUniverseJob;
 use App\Models\ScreenerPreset;
 use App\Services\MarketData\BusinessQuantClient;
+use App\Services\MarketData\NseArchiveClient;
 use App\Services\MarketData\NseClient;
 use Illuminate\Support\Facades\Log;
 
@@ -28,7 +29,7 @@ class ScreenerSyncOrchestrator
         $recorder = new SyncRunRecorder('manual_bootstrap', 'ALL');
 
         try {
-            (new SyncIndiaUniverseJob)->handle(app(NseClient::class));
+            (new SyncIndiaUniverseJob)->handle(app(NseClient::class), app(NseArchiveClient::class));
 
             if ($includeUs) {
                 (new SyncUsUniverseJob)->handle();

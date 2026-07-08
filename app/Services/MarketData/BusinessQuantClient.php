@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 class BusinessQuantClient
 {
     private PendingRequest $http;
+    private ?string $lastError = null;
 
     public function __construct()
     {
@@ -28,25 +29,40 @@ class BusinessQuantClient
      */
     public function ratioSnapshot(string $ticker, string $frequency = 'Annual', string $period = '10y'): array
     {
-        $response = $this->http->get('/statements', [
-            'ticker' => $ticker,
-            'statement' => 'Ratios',
-            'frequency' => $frequency,
-            'period' => $period,
-            'api_key' => config('market_screenr.businessquant.api_key'),
-        ]);
+        $this->lastError = null;
+
+        try {
+            $response = $this->http->get('/statements', [
+                'ticker' => $ticker,
+                'statement' => 'Ratios',
+                'frequency' => $frequency,
+                'period' => $period,
+                'api_key' => config('market_screenr.businessquant.api_key'),
+            ]);
+        } catch (\Throwable $e) {
+            $this->lastError = $e->getMessage();
+            Log::warning('BusinessQuant ratios exception', ['ticker' => $ticker, 'error' => $this->lastError]);
+
+            return ['metrics' => [], 'pe_history' => []];
+        }
 
         if ($response->failed()) {
+            $this->lastError = $this->summarizeFailure($response->status(), $response->body(), $response->json('detail'));
             Log::warning('BusinessQuant ratios failed', [
                 'ticker' => $ticker,
                 'status' => $response->status(),
-                'body' => $response->json('detail') ?? $response->body(),
+                'body' => $this->lastError,
             ]);
 
             return ['metrics' => [], 'pe_history' => []];
         }
 
         return $this->parseNestedStatement($response->json('data', []) ?? []);
+    }
+
+    public function lastError(): ?string
+    {
+        return $this->lastError;
     }
 
     /**
@@ -159,5 +175,14 @@ class BusinessQuantClient
             str_contains($normalized, 'debt') && str_contains($normalized, 'equity') => 'debt_to_equity',
             default => null,
         };
+    }
+
+    private function summarizeFailure(int $status, string $body, mixed $detail = null): string
+    {
+        if ($status === 403 && str_contains($body, 'Just a moment')) {
+            return '403 Cloudflare/browser challenge from BusinessQuant; datacenter IP is blocked.';
+        }
+
+        return trim((string) ($detail ?: str($body)->limit(240)));
     }
 }

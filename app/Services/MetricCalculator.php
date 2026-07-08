@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\CompanyMetric;
 use App\Models\MetricHistory;
 use App\Models\PriceHistory;
+use App\Services\MarketData\NseArchiveClient;
 use App\Services\MarketData\YahooFinanceClient;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -14,10 +15,12 @@ class MetricCalculator
 {
     public function __construct(
         private YahooFinanceClient $yahoo,
+        private NseArchiveClient $nseArchives,
     ) {}
 
     public function computeAndStore(Company $company): CompanyMetric
     {
+        $this->nseArchives->syncLatestPriceHistory($company);
         $this->yahoo->syncPriceHistory($company, config('market_screenr.sync.price_history_years'));
 
         $prices = PriceHistory::query()

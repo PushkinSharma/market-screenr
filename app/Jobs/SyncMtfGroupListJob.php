@@ -25,7 +25,7 @@ class SyncMtfGroupListJob implements ShouldQueue
                 ? "BSE fetch failed; kept {$existing} existing MTF flags unchanged."
                 : 'BSE fetch failed; no MTF flags set. Using fallback universe MTF flags if present.';
 
-            $recorder->finish('failed', 0, 0, $message);
+            $recorder->finish($existing > 0 ? 'partial' : 'failed', 0, 0, $message);
             Log::warning("SyncMtfGroupListJob: {$message}");
 
             return;

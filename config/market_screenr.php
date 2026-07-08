@@ -14,6 +14,7 @@ return [
 
     'nse' => [
         'base_url' => env('NSE_BASE_URL', 'https://www.nseindia.com'),
+        'archive_base_url' => env('NSE_ARCHIVE_BASE_URL', 'https://nsearchives.nseindia.com'),
         'user_agent' => env('NSE_USER_AGENT', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'),
     ],
 
