@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('symbol', 30);
             $table->string('exchange', 20); // NSE, BSE, NYSE, NASDAQ
-            $table->string('market', 2); // IN, US
+            $table->string('market', 5); // IN, US
             $table->string('name');
             $table->string('sector')->nullable();
             $table->string('industry')->nullable();
@@ -128,7 +128,7 @@ return new class extends Migration
         Schema::create('screener_presets', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('market', 2)->default('IN'); // IN, US, ALL
+            $table->string('market', 5)->default('IN'); // IN, US, ALL
             $table->boolean('mtf_only')->default(true);
             $table->json('weights'); // component weights summing to 100
             $table->json('filters')->nullable(); // min/max hard filters

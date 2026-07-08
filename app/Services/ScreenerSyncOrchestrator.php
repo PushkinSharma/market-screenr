@@ -45,7 +45,7 @@ class ScreenerSyncOrchestrator
             if ($includeUs) {
                 (new SyncUsFundamentalsJob)->handle(
                     app(BusinessQuantClient::class),
-                    app(MetricCalculator::class),
+                    app(FundamentalsSyncService::class),
                 );
             }
 
