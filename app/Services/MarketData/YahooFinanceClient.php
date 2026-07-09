@@ -109,7 +109,8 @@ class YahooFinanceClient
                 continue;
             }
 
-            PriceHistory::query()->updateOrCreate(
+            \App\Support\SqliteDateUpsert::updateOrCreate(
+                PriceHistory::class,
                 ['company_id' => $company->id, 'trade_date' => $bar['date']],
                 [
                     'open' => $bar['open'],
@@ -118,6 +119,7 @@ class YahooFinanceClient
                     'close' => $bar['close'],
                     'volume' => $bar['volume'],
                 ],
+                'trade_date',
             );
             $count++;
         }

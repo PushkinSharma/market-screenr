@@ -35,6 +35,20 @@ return [
         'timeout' => (int) env('SCREENER_INGEST_TIMEOUT', 15),
     ],
 
+    /*
+    | Cheapest LLM + web search for personal use: Gemini Flash with Google Search grounding.
+    | Get a key at https://aistudio.google.com/apikey (free tier is usually enough).
+    */
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY'),
+        // 2.0 Flash was shut down June 2026; 2.5 Flash is the free-tier default.
+        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+        // Visible answer + thinking share this budget; 1200 was truncating briefs.
+        'max_output_tokens' => (int) env('GEMINI_MAX_OUTPUT_TOKENS', 8192),
+        // Keep thinking small so most tokens go to the written answer.
+        'thinking_budget' => (int) env('GEMINI_THINKING_BUDGET', 1024),
+    ],
+
     'default_weights' => [
         'business_quality' => 25,
         'sector_tailwind' => 20,
@@ -52,11 +66,48 @@ return [
         'scores_at' => '22:30',
         'bootstrap_company_limit' => (int) env('MARKET_SCREENR_BOOTSTRAP_LIMIT', 20),
         'price_history_years' => (int) env('MARKET_SCREENR_PRICE_HISTORY_YEARS', 1),
+        // Measured locally ~4–5s/stock (Screener.in + Yahoo). Used for ETA hints.
+        'seconds_per_stock_estimate' => (float) env('MARKET_SCREENR_SECONDS_PER_STOCK', 4.5),
+    ],
+
+    /*
+    | Symbols to enrich first during local India sync (before alphabetical junk).
+    | Add your watchlist here — sync will prioritize these every day.
+    */
+    /*
+    | ~100 liquid / thematic names. screener:enrich prioritizes these before
+    | alphabetical fill. Edit freely — this is your daily research universe.
+    */
+    'preferred_nse_symbols' => [
+        // Nifty heavyweights
+        'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'HINDUNILVR', 'ITC',
+        'SBIN', 'BHARTIARTL', 'KOTAKBANK', 'LT', 'AXISBANK', 'ASIANPAINT', 'MARUTI',
+        'TITAN', 'SUNPHARMA', 'WIPRO', 'ULTRACEMCO', 'NESTLEIND', 'BAJFINANCE',
+        'POWERGRID', 'NTPC', 'ONGC', 'TATASTEEL', 'JSWSTEEL', 'HCLTECH', 'TECHM',
+        'ADANIENT', 'ADANIPORTS', 'BAJAJFINSV', 'BAJAJ-AUTO', 'HEROMOTOCO', 'EICHERMOT',
+        'M&M', 'TATAMOTORS', 'INDUSINDBK', 'HDFCLIFE', 'SBILIFE', 'CIPLA', 'DRREDDY',
+        'DIVISLAB', 'APOLLOHOSP', 'GRASIM', 'HINDALCO', 'COALINDIA', 'BPCL', 'IOC',
+        'BRITANNIA', 'TATACONSUM', 'JINDALSTEL', 'VEDL', 'TRENT', 'DMART', 'PIDILITIND',
+        // Cap goods / defence / EMS / power chain (bottleneck themes)
+        'BEL', 'HAL', 'BHEL', 'SIEMENS', 'ABB', 'POLYCAB', 'DIXON', 'CGPOWER', 'KEI',
+        'APLAPOLLO', 'HAVELLS', 'VOLTAS', 'BLUESTARCO', 'THERMAX', 'CUMMINSIND',
+        'SCHAEFFLER', 'TIMKEN', 'SKFINDIA', 'BOSCHLTD', 'MOTHERSON', 'BHARATFORG',
+        'SOLARINDS', 'DEEPAKNTR', 'AARTIIND', 'SRF', 'PIIND', 'NAVINFLUOR',
+        'LTIM', 'PERSISTENT', 'COFORGE', 'MPHASIS', 'OFSS',
+        'INDIGO', 'ZOMATO', 'PAYTM', 'POLICYBZR', 'NYKAA',
+        'IRCTC', 'IRFC', 'RECLTD', 'PFC', 'NHPC', 'SJVN',
+        'GODREJCP', 'DABUR', 'MARICO', 'COLPAL', 'UNITDSPR',
+        'PAGEIND', 'ABBOTINDIA', 'TORNTPHARM', 'LUPIN', 'AUROPHARMA',
+        'BANKBARODA', 'PNB', 'CANBK', 'UNIONBANK', 'IDFCFIRSTB',
+        'CHOLAFIN', 'MUTHOOTFIN', 'SHRIRAMFIN', 'MFSL',
+        'DLF', 'GODREJPROP', 'OBEROIRLTY', 'PRESTIGE', 'LODHA',
+        'AMBUJACEM', 'SHREECEM', 'DALBHARAT', 'RAMCOCEM',
+        'GAIL', 'PETRONET', 'IGL', 'MGL',
     ],
 
     /*
     | Fallback when NSE API is unreachable (common on Cloud datacenter IPs).
-    | These are liquid NSE large-caps likely MTF-eligible.
+    | These are liquid NSE large-caps.
     */
     'fallback_nse_symbols' => [
         ['symbol' => 'RELIANCE', 'name' => 'Reliance Industries'],

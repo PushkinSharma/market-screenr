@@ -125,16 +125,24 @@ class MetricCalculator
         ];
     }
 
+    /**
+     * Own-history P/E percentile: lower = cheaper vs this stock's past.
+     * Needs a real multi-year series — a single "today" point is useless and was
+     * previously producing 100% ("Very Expensive") for every name.
+     */
     private function computeValuationPercentile(Company $company): ?float
     {
         $peHistory = MetricHistory::query()
             ->where('company_id', $company->id)
             ->where('metric_key', 'pe')
+            ->whereIn('period_type', ['annual', 'quarterly'])
             ->orderBy('period_date')
             ->pluck('value')
-            ->filter(fn ($v) => $v > 0);
+            ->filter(fn ($v) => $v > 0)
+            ->values();
 
-        if ($peHistory->isEmpty()) {
+        // Need spread across time; ignore same-day point/daily snapshots.
+        if ($peHistory->count() < 3) {
             return null;
         }
 
@@ -143,26 +151,18 @@ class MetricCalculator
             return null;
         }
 
-        $below = $peHistory->filter(fn ($v) => $v >= $currentPe)->count();
+        // Fraction of historical P/Es strictly below current → low PE = low % = cheap.
+        $below = $peHistory->filter(fn ($v) => $v < $currentPe)->count();
 
         return ($below / $peHistory->count()) * 100;
     }
 
     private function storePeHistory(Company $company, CompanyMetric $metric): void
     {
-        if ($metric->current_pe === null) {
-            return;
-        }
-
-        MetricHistory::query()->updateOrCreate(
-            [
-                'company_id' => $company->id,
-                'metric_key' => 'pe',
-                'period_date' => today(),
-                'period_type' => 'daily',
-            ],
-            ['value' => $metric->current_pe, 'source' => 'computed'],
-        );
+        // Intentionally no-op for daily PE snapshots. Screener.in does not expose
+        // multi-year P/E history on the company page; cross-sectional ranking in
+        // ScreenerEngine fills valuation_percentile instead. Writing today's PE
+        // as history made every stock look "Very Expensive".
     }
 
     /**

@@ -91,8 +91,8 @@ class ScreenerEngine
     }
 
     /**
-     * When historical P/E series is missing (Cloud without screener.in), rank today's P/E
-     * across the scored universe so valuation columns are not blank.
+     * Rank today's P/E across the scored universe (lower PE = lower percentile = cheaper).
+     * Overwrites broken own-history percentiles when we only have a single PE point.
      *
      * @param  Collection<int, CompanyMetric>  $metrics
      */
@@ -104,15 +104,18 @@ class ScreenerEngine
             return;
         }
 
-        $peValues = $withPe->pluck('current_pe')->sort()->values();
+        $peValues = $withPe->pluck('current_pe')->map(fn ($v) => (float) $v)->sort()->values();
+        $n = $peValues->count();
 
         foreach ($metrics as $metric) {
-            if ($metric->valuation_percentile !== null || $metric->current_pe === null || $metric->current_pe <= 0) {
+            if ($metric->current_pe === null || $metric->current_pe <= 0) {
                 continue;
             }
 
-            $belowOrEqual = $peValues->filter(fn (float $pe) => $pe >= $metric->current_pe)->count();
-            $metric->valuation_percentile = ($belowOrEqual / $peValues->count()) * 100;
+            $current = (float) $metric->current_pe;
+            $below = $peValues->filter(fn (float $pe) => $pe < $current)->count();
+            // 0 = cheapest in universe today, 100 = most expensive.
+            $metric->valuation_percentile = round(($below / $n) * 100, 2);
             $metric->save();
         }
     }

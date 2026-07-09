@@ -24,20 +24,56 @@ class SyncIndiaFundamentalsJob implements ShouldQueue
     {
         $recorder = new SyncRunRecorder('screener_in', 'IN');
 
-        $query = Company::query()
-            ->where('market', 'IN')
-            ->where('is_active', true);
-
         if ($this->companyId) {
-            $query->where('id', $this->companyId);
+            $companies = Company::query()
+                ->where('market', 'IN')
+                ->where('is_active', true)
+                ->where('id', $this->companyId)
+                ->get();
         } else {
-            $query->where(function ($q) {
-                $q->whereNull('fundamentals_synced_at')
-                    ->orWhere('fundamentals_synced_at', '<', now()->subDay());
-            })->limit($this->limit ?? config('market_screenr.sync.bootstrap_company_limit'));
-        }
+            // Prefer liquid large-caps first. Alphabetical sync was enriching
+            // ETFs/junk (20MICRONS, SILVER360) before names you actually care about.
+            $limit = $this->limit ?? config('market_screenr.sync.bootstrap_company_limit');
+            $preferred = collect(config('market_screenr.preferred_nse_symbols', []))
+                ->merge(collect(config('market_screenr.fallback_nse_symbols', []))->pluck('symbol'))
+                ->map(fn ($s) => strtoupper((string) $s))
+                ->unique()
+                ->values()
+                ->all();
 
-        $companies = $query->get();
+            $stale = fn ($q) => $q->where(function ($inner) {
+                $inner->whereNull('fundamentals_synced_at')
+                    ->orWhere('fundamentals_synced_at', '<', now()->subDay());
+            });
+
+            $preferredSet = array_flip($preferred);
+
+            $priority = Company::query()
+                ->where('market', 'IN')
+                ->where('is_active', true)
+                ->whereIn('symbol', $preferred)
+                ->where($stale)
+                ->get()
+                ->sortBy(fn (Company $c) => $preferredSet[$c->symbol] ?? PHP_INT_MAX)
+                ->take($limit)
+                ->values();
+
+            $remaining = $limit - $priority->count();
+            $rest = collect();
+
+            if ($remaining > 0) {
+                $rest = Company::query()
+                    ->where('market', 'IN')
+                    ->where('is_active', true)
+                    ->whereNotIn('symbol', $preferred)
+                    ->where($stale)
+                    ->orderBy('symbol')
+                    ->limit($remaining)
+                    ->get();
+            }
+
+            $companies = $priority->concat($rest)->values();
+        }
         $succeeded = 0;
         $delay = config('market_screenr.screener_ingest.delay_seconds');
 

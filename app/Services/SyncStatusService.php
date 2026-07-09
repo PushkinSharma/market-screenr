@@ -95,18 +95,10 @@ class SyncStatusService
             $issues[] = 'No companies in database. Run `php artisan screener:sync` or wait for the NSE universe job. NSE may block Cloud IPs — a fallback list is used when the API fails.';
         }
 
-        if ($stats['india'] > 0 && $stats['mtf_eligible'] === 0) {
-            $issues[] = 'No MTF-eligible stocks flagged. BSE Group I sync may have failed. Turn off "MTF eligible only" to see stocks, or run `php artisan screener:sync`.';
-        }
-
         if ($stats['with_metrics'] === 0) {
-            $issues[] = 'No company metrics stored yet. Fundamentals sync has not completed — Python/screener.in is unavailable on Laravel Cloud; NSE quote + Yahoo price fallback is used instead.';
-        } elseif ($stats['with_metrics_latest'] > 0 && $stats['with_metrics_latest'] < $stats['india']) {
-            $issues[] = "Only {$stats['with_metrics_latest']} of {$stats['india']} India stocks have metrics. Bootstrap sync uses a limit (MARKET_SCREENR_BOOTSTRAP_LIMIT) — run `php artisan screener:sync --sync --limit=20` to enrich more.";
-        }
-
-        if ($stats['with_metrics_latest'] > ScreenerScore::query()->distinct('company_id')->count('company_id')) {
-            $issues[] = 'The table below shows scored stocks only, not every company with metrics. Uncheck "MTF eligible only" or set market to "All Markets" to widen results, then run `php artisan screener:compute-scores`.';
+            $issues[] = 'No company metrics stored yet. Run `php artisan screener:sync --sync --india-only --limit=20` locally with SCREENER_INGEST_ENABLED=true.';
+        } elseif ($stats['with_metrics_latest'] > 0 && $stats['with_metrics_latest'] < min(40, $stats['india'])) {
+            $issues[] = "Only {$stats['with_metrics_latest']} India stocks have metrics. Preferred watchlist syncs first — run `php artisan screener:sync --sync --india-only --limit=20` again to enrich more.";
         }
 
         $latestMetric = CompanyMetric::query()->max('as_of_date');
@@ -114,8 +106,8 @@ class SyncStatusService
             $issues[] = "Metrics exist (as of {$latestMetric}) but no scores computed. Run `php artisan screener:compute-scores`.";
         }
 
-        if (empty(config('market_screenr.businessquant.api_key'))) {
-            $issues[] = 'BUSINESSQUANT_API_KEY is not set — US fundamentals will not sync.';
+        if (! config('market_screenr.screener_ingest.enabled')) {
+            $issues[] = 'SCREENER_INGEST_ENABLED is false — ROCE/P/E from Screener.in will stay empty.';
         }
 
         return $issues;

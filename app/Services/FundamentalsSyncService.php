@@ -51,9 +51,25 @@ class FundamentalsSyncService
         $ratios = $data['ratios'] ?? [];
         $shareholding = $data['shareholding'] ?? [];
 
+        $companyAttrs = array_filter([
+            'sector' => is_string($data['sector'] ?? null) ? $data['sector'] : null,
+            'industry' => is_string($data['industry'] ?? null) ? $data['industry'] : null,
+        ]);
+        if ($companyAttrs !== []) {
+            $company->update($companyAttrs);
+        }
+
+        $currentPrice = $this->parseFloat($keyMetrics['current_price'] ?? null);
+        $bookValue = $this->parseFloat($keyMetrics['book_value'] ?? null);
+        $pb = $this->parseFloat($keyMetrics['pb'] ?? null);
+        if ($pb === null && $currentPrice !== null && $bookValue !== null && $bookValue > 0) {
+            $pb = round($currentPrice / $bookValue, 2);
+        }
+
         $attrs = [
             'current_pe' => $this->parseFloat($keyMetrics['pe'] ?? null),
-            'current_pb' => $this->parseFloat($keyMetrics['pb'] ?? null),
+            'current_pb' => $pb,
+            'current_price' => $currentPrice,
             'roce' => $this->parseFloat($keyMetrics['roce'] ?? $ratios['roce'] ?? null),
             'roe' => $this->parseFloat($keyMetrics['roe'] ?? $ratios['roe'] ?? null),
             'debt_to_equity' => $this->parseFloat($keyMetrics['debt_to_equity'] ?? null),
@@ -61,6 +77,8 @@ class FundamentalsSyncService
             'promoter_holding' => $this->parseFloat($shareholding['promoter_pct'] ?? null),
             'fii_holding' => $this->parseFloat($shareholding['fii_pct'] ?? null),
             'dii_holding' => $this->parseFloat($shareholding['dii_pct'] ?? null),
+            'fii_holding_change_qoq' => $this->parseFloat($shareholding['fii_change_qoq'] ?? null),
+            'dii_holding_change_qoq' => $this->parseFloat($shareholding['dii_change_qoq'] ?? null),
             'revenue_cagr_3y' => $this->parseFloat($data['revenue_cagr_3y'] ?? null),
             'profit_cagr_3y' => $this->parseFloat($data['profit_cagr_3y'] ?? null),
             'pe_avg_5y' => $this->parseFloat($data['pe_avg_5y'] ?? null),
@@ -87,15 +105,32 @@ class FundamentalsSyncService
                     continue;
                 }
 
-                MetricHistory::query()->updateOrCreate(
-                    [
+                // SQLite may store dates as "Y-m-d H:i:s"; match with whereDate then upsert.
+                $periodDate = \Carbon\Carbon::parse($point['date'])->startOfDay();
+                $periodType = $point['type'] ?? 'annual';
+
+                $existing = MetricHistory::query()
+                    ->where('company_id', $company->id)
+                    ->where('metric_key', $key)
+                    ->where('period_type', $periodType)
+                    ->whereDate('period_date', $periodDate->toDateString())
+                    ->first();
+
+                if ($existing) {
+                    $existing->update([
+                        'value' => $point['value'],
+                        'source' => 'screener.in',
+                    ]);
+                } else {
+                    MetricHistory::query()->create([
                         'company_id' => $company->id,
                         'metric_key' => $key,
-                        'period_date' => $point['date'],
-                        'period_type' => $point['type'] ?? 'annual',
-                    ],
-                    ['value' => $point['value'], 'source' => 'screener.in'],
-                );
+                        'period_date' => $periodDate->toDateString(),
+                        'period_type' => $periodType,
+                        'value' => $point['value'],
+                        'source' => 'screener.in',
+                    ]);
+                }
             }
         }
     }

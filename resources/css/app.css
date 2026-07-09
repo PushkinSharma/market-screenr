@@ -7,3 +7,46 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
+
+/* Gemini briefing markdown */
+.briefing-md h1,
+.briefing-md h2,
+.briefing-md h3 {
+    color: #f1f5f9;
+    font-weight: 600;
+    margin: 1.1em 0 0.45em;
+    line-height: 1.3;
+}
+.briefing-md h1 { font-size: 1.15rem; }
+.briefing-md h2 { font-size: 1.05rem; }
+.briefing-md h3 { font-size: 0.95rem; color: #cbd5e1; }
+.briefing-md p { margin: 0.55em 0; color: #e2e8f0; }
+.briefing-md ul,
+.briefing-md ol {
+    margin: 0.5em 0 0.75em 1.25em;
+    padding: 0;
+}
+.briefing-md ul { list-style: disc; }
+.briefing-md ol { list-style: decimal; }
+.briefing-md li { margin: 0.25em 0; color: #e2e8f0; }
+.briefing-md strong { color: #f8fafc; font-weight: 600; }
+.briefing-md em { color: #cbd5e1; }
+.briefing-md a { color: #34d399; text-decoration: underline; }
+.briefing-md blockquote {
+    border-left: 3px solid #334155;
+    margin: 0.75em 0;
+    padding: 0.35em 0 0.35em 0.9em;
+    color: #94a3b8;
+}
+.briefing-md code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85em;
+    background: rgba(15, 23, 42, 0.7);
+    padding: 0.1em 0.35em;
+    border-radius: 0.25rem;
+}
+.briefing-md hr {
+    border: 0;
+    border-top: 1px solid #334155;
+    margin: 1em 0;
+}

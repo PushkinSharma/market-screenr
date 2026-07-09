@@ -33,15 +33,22 @@ class ScreenerPreset extends Model
 
     public static function defaultPreset(): self
     {
-        return static::query()->firstOrCreate(
+        $preset = static::query()->firstOrCreate(
             ['is_default' => true, 'market' => 'IN'],
             [
-                'name' => 'MTF Default',
+                'name' => 'India Default',
                 'mtf_only' => false,
                 'weights' => config('market_screenr.default_weights'),
                 'filters' => [],
             ],
         );
+
+        // Migrate older installs away from the MTF-centric default label.
+        if ($preset->name === 'MTF Default') {
+            $preset->update(['name' => 'India Default', 'mtf_only' => false]);
+        }
+
+        return $preset->fresh();
     }
 
     /**

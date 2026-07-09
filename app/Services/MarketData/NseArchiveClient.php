@@ -52,7 +52,8 @@ class NseArchiveClient
             return false;
         }
 
-        PriceHistory::query()->updateOrCreate(
+        \App\Support\SqliteDateUpsert::updateOrCreate(
+            PriceHistory::class,
             ['company_id' => $company->id, 'trade_date' => $row['trade_date']],
             [
                 'open' => $row['open'],
@@ -62,6 +63,7 @@ class NseArchiveClient
                 'volume' => $row['volume'],
                 'delivery_pct' => $row['delivery_pct'],
             ],
+            'trade_date',
         );
 
         return true;

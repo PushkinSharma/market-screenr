@@ -63,12 +63,21 @@ Visit `http://localhost:8000`
 # Sync a single stock
 php artisan screener:sync RELIANCE --market=IN
 
-# Dispatch all batch sync jobs
-php artisan screener:sync
+# India-only bootstrap (one batch)
+php artisan screener:sync --sync --india-only --limit=20
+
+# Loop until 100 (or 250) India stocks have ROCE — leave running
+php artisan screener:enrich --target=100 --batch=20
+php artisan screener:enrich --target=250 --batch=20 --max-batches=20
 
 # Recompute weighted scores
 php artisan screener:compute-scores
+
+# Pipeline health
+php artisan screener:status
 ```
+
+**Timing (local Mac, measured):** ~4.5s/stock → limit 20 ≈ 90s, 100 stocks ≈ 8–10 min, 250 ≈ 20–25 min. Be polite to Screener.in (`SCREENER_INGEST_DELAY=1.5`).
 
 ## Python Sidecar (India fundamentals)
 
@@ -98,9 +107,22 @@ Enable **Scheduler** and **Managed Queues** in Laravel Cloud dashboard.
 4. Enable Scheduler toggle
 5. Set env vars: `BUSINESSQUANT_API_KEY`, `FMP_API_KEY` (optional)
 
+## AI briefing (cheapest LLM + web)
+
+Uses **Gemini Flash + Google Search grounding** — usually free on [Google AI Studio](https://aistudio.google.com/apikey).
+
+```bash
+# .env
+GEMINI_API_KEY=your_key
+GEMINI_MODEL=gemini-2.5-flash
+php artisan config:clear
+```
+
+Open any company page → set preferences → **Analyze with web search**. The prompt includes your dashboard metrics + score breakdown; Gemini can search for results/news.
+
 ## Roadmap
 
-- [ ] LLM "Why is this stock falling?" engine (results, concalls, news, broker actions)
+- [x] LLM stock briefing with web search (Gemini Flash)
 - [ ] US screener parity
 - [ ] Sector-relative percentile scoring
 - [ ] Email alerts for score changes

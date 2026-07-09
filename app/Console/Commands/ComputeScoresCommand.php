@@ -11,7 +11,7 @@ class ComputeScoresCommand extends Command
 {
     protected $signature = 'screener:compute-scores {--preset= : Preset ID}';
 
-    protected $description = 'Compute weighted MTF screener scores for all companies';
+    protected $description = 'Compute weighted screener scores for all companies';
 
     public function handle(ScreenerEngine $engine, SyncStatusService $status): int
     {

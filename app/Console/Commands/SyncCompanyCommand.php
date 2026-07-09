@@ -15,7 +15,8 @@ class SyncCompanyCommand extends Command
         {--market=IN : IN or US}
         {--sync : Run inline instead of dispatching to queue}
         {--limit= : Number of Indian companies to enrich in this run}
-        {--refresh-mtf : Refresh the BSE MTF list inline (slow/fragile on Cloud)}';
+        {--india-only : Skip US universe/fundamentals (recommended for local India use)}
+        {--refresh-mtf : Refresh the BSE MTF list inline (slow/fragile)}';
 
     protected $description = 'Sync fundamentals for a single company or batch';
 
@@ -39,12 +40,13 @@ class SyncCompanyCommand extends Command
 
         if ($this->option('sync')) {
             $limit = (int) ($this->option('limit') ?: config('market_screenr.sync.bootstrap_company_limit'));
+            $includeUs = ! $this->option('india-only');
 
-            $this->info('Running full sync inline...');
+            $this->info($includeUs ? 'Running full sync inline...' : 'Running India-only sync inline...');
             app(ScreenerSyncOrchestrator::class)->runBootstrap(
                 $limit,
                 (bool) $this->option('refresh-mtf'),
-                includeUs: true,
+                includeUs: $includeUs,
             );
             $this->call('screener:status');
 

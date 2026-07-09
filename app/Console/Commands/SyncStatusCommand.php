@@ -56,7 +56,8 @@ class SyncStatusCommand extends Command
         }
 
         $this->newLine();
-        $this->line('Bootstrap on Cloud: php artisan screener:sync --sync');
+        $this->line('Fill coverage: php artisan screener:enrich --target=100 --batch=20');
+        $this->line('One batch:     php artisan screener:sync --sync --india-only --limit=20');
 
         return self::SUCCESS;
     }
