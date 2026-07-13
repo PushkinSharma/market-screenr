@@ -1,9 +1,9 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "pushkinsharma/market-screenr",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "description": "Personal stock screener for India (NSE) and US markets with weighted scoring.",
+    "keywords": ["stocks", "screener", "laravel", "livewire", "india", "nse"],
     "license": "MIT",
     "require": {
         "php": "^8.3",

@@ -1,132 +1,183 @@
 # Market Screenr
 
-Personal stock screener for **US and Indian (NSE/BSE)** markets with custom weighted MTF scoring, valuation analysis, drawdown tracking, and historical P/E & ROCE charts.
+A personal stock screener for **Indian (NSE)** and **US** markets.
 
-Built with **Laravel 13**, **Livewire 4**, deployable on **Laravel Cloud**.
+It pulls fundamentals and prices, ranks stocks with a custom weighted score, and shows valuation / drawdown / momentum on a simple dashboard. Optional AI briefings (Gemini) can add recent news context on a company page.
 
-## Features
+Built with Laravel + Livewire. India is the main focus today; US support works but is thinner.
 
-### Section 1 — Valuation
-- Current P/E, 5Y & 10Y average P/E
-- EV/EBITDA (current + 5Y avg)
-- Price/Book
-- Historical percentile → **"Is it cheap?"**
+> Not investment advice. Data comes from public sources and scrapers — treat numbers as research inputs, not gospel.
 
-### Section 2 — Drawdown Engine
-- Current price, 52W high/low
-- % below ATH, % above ATL
-- 10-year price percentile
+## What you get
 
-### Section 3 — Fundamentals
-- Revenue & profit CAGR, ROE, ROCE
-- Debt/equity, interest coverage, FCF
-- Promoter holding, FII/DII buying trends
+- **Ranked screener** — score stocks on 6 buckets you can re-weight (quality, sector trend, valuation, drawdown, momentum, results)
+- **Company page** — key ratios, drawdown vs highs/lows, moving averages, score breakdown, charts
+- **Weight presets** — tweak what matters to you and recompute ranks
+- **Daily sync jobs** — refresh universe, fundamentals, MTF list, and scores
+- **Optional AI briefing** — Gemini Flash + web search on a company page
 
-### Section 4 — Momentum (confirmation, not trading)
-- 50/100/200 DMA, distance from 200 DMA
-- 52W relative strength, volume spike, delivery %
+## Requirements
 
-### Section 5 — MTF Score
-- Customizable weights across 6 components
-- Daily ranked screener for MTF-eligible NSE stocks
-- Score breakdown per stock (e.g. 83/100)
+- PHP 8.3+
+- Composer
+- Node.js 20+ (for Vite / Tailwind)
+- SQLite (default) or Postgres
+- Python 3.9+ (only if you want India fundamentals from Screener.in)
 
-## Data Sources
+API keys are optional depending on what you sync:
 
-| Market | Source | Purpose |
-|--------|--------|---------|
-| US | [BusinessQuant](https://businessquant.com) (free) | Fundamentals, ratios, P/E history |
-| US backup | [FMP](https://financialmodelingprep.com) (250 calls/day free) | EOD prices |
-| India universe | NSE public API | Symbol list, quotes |
-| India fundamentals | Screener.in (Python sidecar) | ROCE, P/E, financials |
-| India prices | Yahoo Finance `.NS` | 10Y OHLCV, DMAs |
-| MTF eligibility | BSE Group I list | Monthly MTF flag |
+| Key | Needed for |
+|-----|------------|
+| _(none)_ | Local demo seed + Yahoo prices |
+| `GEMINI_API_KEY` | AI company briefings |
+| `BUSINESSQUANT_API_KEY` | US fundamentals |
+| `FMP_API_KEY` | US price backup (optional) |
 
-## Quick Start
+## Quick start
 
 ```bash
 composer install
 cp .env.example .env
 php artisan key:generate
+
+# SQLite (easiest local setup)
+touch database/database.sqlite
+
 php artisan migrate
-php artisan db:seed
-php artisan screener:compute-scores
+php artisan db:seed                  # small demo universe
+php artisan screener:compute-scores  # rank the demo set
+
 npm install && npm run build
 php artisan serve
 ```
 
-Visit `http://localhost:8000`
+Open [http://localhost:8000](http://localhost:8000).
 
-## Commands
+For live India data instead of (or after) the demo seed:
 
 ```bash
-# Sync a single stock
+# Python deps for Screener.in scrape
+cd services/screener-ingest && pip install -r requirements.txt && cd ../..
+
+# Pull ~20 India names (prices + fundamentals), then score
+php artisan screener:sync --sync --india-only --limit=20
+php artisan screener:compute-scores
+```
+
+Leave this running overnight if you want a larger set:
+
+```bash
+php artisan screener:enrich --target=100 --batch=20
+```
+
+Be polite to Screener.in (`SCREENER_INGEST_DELAY=1.5` in `.env`). Rough local pace: ~4–5 seconds per stock.
+
+## Useful commands
+
+```bash
+# One stock
 php artisan screener:sync RELIANCE --market=IN
 
-# India-only bootstrap (one batch)
+# Batch India sync (inline)
 php artisan screener:sync --sync --india-only --limit=20
 
-# Loop until 100 (or 250) India stocks have ROCE — leave running
+# Grow coverage until N stocks have ROCE
 php artisan screener:enrich --target=100 --batch=20
-php artisan screener:enrich --target=250 --batch=20 --max-batches=20
 
-# Recompute weighted scores
+# Recompute ranks after changing weights
 php artisan screener:compute-scores
 
-# Pipeline health
+# Pipeline health (counts, last syncs)
 php artisan screener:status
 ```
 
-**Timing (local Mac, measured):** ~4.5s/stock → limit 20 ≈ 90s, 100 stocks ≈ 8–10 min, 250 ≈ 20–25 min. Be polite to Screener.in (`SCREENER_INGEST_DELAY=1.5`).
-
-## Python Sidecar (India fundamentals)
+Dev servers (app + queue + Vite) in one go:
 
 ```bash
-cd services/screener-ingest
-pip install -r requirements.txt
-python ingest.py --symbol RELIANCE --format json
+composer run dev
 ```
 
-## Scheduled Jobs (Laravel Cloud)
+## How scoring works
 
-Enable **Scheduler** and **Managed Queues** in Laravel Cloud dashboard.
+Each stock gets a 0–100 score from six parts. Default weights:
 
-| Job | Schedule | Purpose |
-|-----|----------|---------|
-| SyncIndiaUniverseJob | Daily 8:30 PM IST | NSE symbol list |
-| SyncMtfGroupListJob | Monthly 2nd | BSE Group I MTF list |
-| SyncIndiaFundamentalsJob | Daily 9:00 PM IST | Screener.in ingest (50/day batch) |
-| SyncUsFundamentalsJob | Daily 6:00 AM ET | BusinessQuant US data |
-| ComputeScreenerScoresJob | Daily 10:30 PM IST | Weighted ranking |
+| Part | Default | Roughly based on |
+|------|---------|------------------|
+| Business quality | 25% | ROCE, ROE, debt, interest cover, promoter holding |
+| Sector trend | 20% | 52-week return, revenue growth |
+| Valuation | 20% | P/E, P/B, cheapness vs peers |
+| Correction | 15% | Distance from highs / long-range price position |
+| Momentum | 10% | vs 200-day average, volume |
+| Results quality | 10% | Profit/revenue growth, FCF, FII flow |
 
-## Laravel Cloud Deployment
+Change weights at `/preset`. Scores are **relative ranks within your synced universe**, not absolute “buy” grades.
 
-1. Push to GitHub → connect repo in Laravel Cloud
-2. Add Postgres database cluster
-3. Enable Managed Queues (requires `aws/aws-sdk-php` — already included)
-4. Enable Scheduler toggle
-5. Set env vars: `BUSINESSQUANT_API_KEY`, `FMP_API_KEY` (optional)
+## Data sources
 
-## AI briefing (cheapest LLM + web)
+| Market | Source | Used for |
+|--------|--------|----------|
+| India | NSE public endpoints | Symbol list, quotes |
+| India | Screener.in (Python script) | ROCE, P/E, shareholding, etc. |
+| India | Yahoo Finance (`.NS`) | Price history, moving averages |
+| India | BSE Group I list | MTF eligibility flag |
+| US | BusinessQuant | Fundamentals |
+| US | Yahoo / FMP | Prices |
 
-Uses **Gemini Flash + Google Search grounding** — usually free on [Google AI Studio](https://aistudio.google.com/apikey).
+India fundamentals depend on scraping Screener.in. That can break if their HTML changes, and it is not an official API.
+
+## Optional: AI briefings
+
+1. Get a key from [Google AI Studio](https://aistudio.google.com/apikey)
+2. Set in `.env`:
 
 ```bash
-# .env
 GEMINI_API_KEY=your_key
 GEMINI_MODEL=gemini-2.5-flash
-php artisan config:clear
 ```
 
-Open any company page → set preferences → **Analyze with web search**. The prompt includes your dashboard metrics + score breakdown; Gemini can search for results/news.
+3. Open a company page → **Analyze with web search**
 
-## Roadmap
+## Deploy (Laravel Cloud or similar)
 
-- [x] LLM stock briefing with web search (Gemini Flash)
-- [ ] US screener parity
-- [ ] Sector-relative percentile scoring
-- [ ] Email alerts for score changes
+1. Connect the GitHub repo
+2. Add a Postgres database
+3. Turn on **Scheduler** and a **queue worker**
+4. Set env vars you need (`GEMINI_API_KEY`, `BUSINESSQUANT_API_KEY`, …)
+5. Ensure Python + `services/screener-ingest` deps exist on the worker if you sync India fundamentals
+
+Scheduled jobs (IST unless noted):
+
+| Job | When | What |
+|-----|------|------|
+| India universe | Daily 20:30 | NSE symbols |
+| India fundamentals | Daily 21:00 | Screener.in batch |
+| MTF list | Monthly (2nd) | BSE Group I |
+| US fundamentals | Daily 06:00 ET | BusinessQuant |
+| Scores | Daily 22:30 | Recompute ranks |
+
+## Project layout
+
+```
+app/Services/          Scoring, sync, metric math
+app/Services/MarketData/  NSE, Yahoo, BusinessQuant, Screener ingest
+app/Jobs/              Scheduled sync + score jobs
+resources/views/       Livewire dashboard, weights, company page
+services/screener-ingest/  Python HTML → JSON for India fundamentals
+config/market_screenr.php  Weights, watchlist, API settings
+```
+
+## Status / known gaps
+
+Working well for a personal India research loop. Still rough as a polished open-source product:
+
+- **US is incomplete** — universe + BusinessQuant path exists; dashboard/scoring is India-first
+- **No login** — fine for local/personal use; do not expose publicly without auth
+- **Almost no tests** — only Laravel skeleton examples
+- **Scraping is fragile** — Screener.in / NSE can rate-limit or change markup
+- **“10-year” drawdown** — limited by how much price history you actually sync (`MARKET_SCREENR_PRICE_HISTORY_YEARS`, default 1)
+- **Relative strength** is the stock’s own 52-week return, not vs Nifty/S&P
+- **No alerts**, sector-relative scoring, or Docker setup yet
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
